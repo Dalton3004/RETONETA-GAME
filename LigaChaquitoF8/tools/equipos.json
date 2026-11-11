@@ -1,0 +1,247 @@
+{
+ "_nota": "Fuente de los equipos. Lo lee tools/build_sprites.py y genera assets/equipos.js + las camisetas del atlas. kit: diseno = rayas | lisa | mitades | aros | banda | franja_central; franja = color A, franja2 = color B del diseno, mangas, short, medias, medias2 (puno de las medias), numero ('#hex' o 'auto' = contraste automatico). ui: colores del escudo y del marcador. logo: imagen propia (solo La Retoneta).",
+ "equipos": [
+  {
+   "id": "el_boguero",
+   "nombre": "EL BOGUERO",
+   "corto": "BOGUERO",
+   "siglas": "EB",
+   "ui": [
+    "#d3202a",
+    "#111111"
+   ],
+   "kit": {
+    "diseno": "rayas",
+    "franja": "#d3202a",
+    "franja2": "#0b0b0b",
+    "mangas": "#0b0b0b",
+    "short": "#0b0b0b",
+    "medias": "#d3202a",
+    "medias2": "#0b0b0b",
+    "numero": "#ffffff"
+   }
+  },
+  {
+   "id": "macabro",
+   "nombre": "MACABRO",
+   "corto": "MACABRO",
+   "siglas": "MA",
+   "ui": [
+    "#111111",
+    "#e2b422"
+   ],
+   "kit": {
+    "diseno": "banda",
+    "franja": "#151515",
+    "franja2": "#e2b422",
+    "mangas": "#151515",
+    "short": "#151515",
+    "medias": "#e2b422",
+    "medias2": "#151515",
+    "numero": "auto"
+   }
+  },
+  {
+   "id": "cattarino",
+   "nombre": "CATTARINO F.C.",
+   "corto": "CATTARINO",
+   "siglas": "CA",
+   "ui": [
+    "#5fd8d0",
+    "#111111"
+   ],
+   "kit": {
+    "diseno": "lisa",
+    "franja": "#5fd8d0",
+    "franja2": "#5fd8d0",
+    "mangas": "#0b0b0b",
+    "short": "#0b0b0b",
+    "medias": "#5fd8d0",
+    "medias2": "#0b0b0b",
+    "numero": "#0b0b0b"
+   }
+  },
+  {
+   "id": "barrio_fino",
+   "nombre": "BARRIO FINO",
+   "corto": "BARRIO FINO",
+   "siglas": "BF",
+   "ui": [
+    "#f4f4f4",
+    "#1f55c8"
+   ],
+   "kit": {
+    "diseno": "mitades",
+    "franja": "#f4f4f4",
+    "franja2": "#1f55c8",
+    "mangas": "#1f55c8",
+    "short": "#1f55c8",
+    "medias": "#f4f4f4",
+    "medias2": "#1f55c8",
+    "numero": "auto"
+   }
+  },
+  {
+   "id": "choborra",
+   "nombre": "CHOBORRA",
+   "corto": "CHOBORRA",
+   "siglas": "CH",
+   "ui": [
+    "#1d4fd0",
+    "#d42a2a",
+    "#f4f4f4"
+   ],
+   "kit": {
+    "diseno": "banda",
+    "franja": "#1d4fd0",
+    "franja2": "#d42a2a",
+    "mangas": "#1d4fd0",
+    "short": "#f4f4f4",
+    "medias": "#1d4fd0",
+    "medias2": "#f4f4f4",
+    "numero": "auto"
+   }
+  },
+  {
+   "id": "retoneta",
+   "nombre": "RETONETA F.C.",
+   "corto": "RETONETA",
+   "siglas": "RE",
+   "logo": "opt/retoneta.webp",
+   "ui": [
+    "#2457c9",
+    "#17399a"
+   ],
+   "kit": {
+    "diseno": "lisa",
+    "franja": "#2457c9",
+    "franja2": "#2457c9",
+    "mangas": "#17399a",
+    "short": "#17399a",
+    "medias": "#2457c9",
+    "medias2": "#f4f4f4",
+    "numero": "#ffffff"
+   }
+  },
+  {
+   "id": "monarca",
+   "nombre": "MONARCA F.C.",
+   "corto": "MONARCA",
+   "siglas": "MO",
+   "ui": [
+    "#2e2e2e",
+    "#f2f2f2"
+   ],
+   "kit": {
+    "diseno": "aros",
+    "franja": "#4a4a4a",
+    "franja2": "#151515",
+    "mangas": "#151515",
+    "short": "#f2f2f2",
+    "medias": "#2e2e2e",
+    "medias2": "#f2f2f2",
+    "numero": "auto"
+   }
+  },
+  {
+   "id": "norwhisky",
+   "nombre": "NORWHISKY F.C.",
+   "corto": "NORWHISKY",
+   "siglas": "NW",
+   "ui": [
+    "#1e9e3a",
+    "#f2d21b"
+   ],
+   "kit": {
+    "diseno": "aros",
+    "franja": "#1e9e3a",
+    "franja2": "#f2d21b",
+    "mangas": "#f2d21b",
+    "short": "#1e9e3a",
+    "medias": "#f2d21b",
+    "medias2": "#1e9e3a",
+    "numero": "auto"
+   }
+  },
+  {
+   "id": "agustintos",
+   "nombre": "AGUSTINTOS",
+   "corto": "AGUSTINTOS",
+   "siglas": "AG",
+   "ui": [
+    "#6e1426",
+    "#111111"
+   ],
+   "kit": {
+    "diseno": "mitades",
+    "franja": "#8a1a34",
+    "franja2": "#151515",
+    "mangas": "#151515",
+    "short": "#151515",
+    "medias": "#6e1426",
+    "medias2": "#151515",
+    "numero": "auto"
+   }
+  },
+  {
+   "id": "trotenham",
+   "nombre": "TROTENHAM F.C.",
+   "corto": "TROTENHAM",
+   "siglas": "TR",
+   "ui": [
+    "#f4f4f4",
+    "#111111"
+   ],
+   "kit": {
+    "diseno": "lisa",
+    "franja": "#f5f5f5",
+    "franja2": "#f5f5f5",
+    "mangas": "#f5f5f5",
+    "short": "#101a3a",
+    "medias": "#f5f5f5",
+    "medias2": "#101a3a",
+    "numero": "#101a3a"
+   }
+  },
+  {
+   "id": "botajogo",
+   "nombre": "BOTAJOGO",
+   "corto": "BOTAJOGO",
+   "siglas": "BJ",
+   "ui": [
+    "#f4f4f4",
+    "#111111"
+   ],
+   "kit": {
+    "diseno": "rayas",
+    "franja": "#f4f4f4",
+    "franja2": "#0b0b0b",
+    "mangas": "#0b0b0b",
+    "short": "#0b0b0b",
+    "medias": "#0b0b0b",
+    "medias2": "#f4f4f4",
+    "numero": "#8a8a8a"
+   }
+  },
+  {
+   "id": "la_tikineta",
+   "nombre": "LA TIKINETA",
+   "corto": "TIKINETA",
+   "siglas": "LT",
+   "ui": [
+    "#7a2fc0",
+    "#e2b422"
+   ],
+   "kit": {
+    "diseno": "franja_central",
+    "franja": "#7a2fc0",
+    "franja2": "#e2b422",
+    "mangas": "#5a2096",
+    "short": "#5a2096",
+    "medias": "#e2b422",
+    "medias2": "#7a2fc0",
+    "numero": "auto"
+   }
+  }
+ ]
+}

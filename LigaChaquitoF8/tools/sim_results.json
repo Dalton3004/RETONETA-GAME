@@ -1,0 +1,206 @@
+[
+ {
+  "seed": 1001,
+  "frames": 10800,
+  "possession": {
+   "local": 4526,
+   "rival": 2645,
+   "none": 3629
+  },
+  "thirds": {
+   "rivalThird": 887,
+   "mid": 7779,
+   "ownThird": 2134
+  },
+  "ballStillFrames": 38,
+  "ballSpeedSum": 11764.353933325674,
+  "humanDist": 17179.190950008215,
+  "rivalFieldDrift": 3434470.5788103635,
+  "rivalFieldSamples": 32400,
+  "localMateDrift": 3084554.2258042125,
+  "localMateSamples": 21600,
+  "goals": {
+   "local": 0,
+   "rival": 0
+  },
+  "kicks": {
+   "local": 19,
+   "rival": 49
+  },
+  "shots": 32,
+  "rivalGoalsFromLocalKick": 0,
+  "rivalGoalsOther": 0,
+  "rivalGoalsCarried": 0,
+  "seconds": 180
+ },
+ {
+  "seed": 1002,
+  "frames": 11138,
+  "possession": {
+   "local": 4582,
+   "rival": 2428,
+   "none": 4128
+  },
+  "thirds": {
+   "rivalThird": 1317,
+   "mid": 7223,
+   "ownThird": 2598
+  },
+  "ballStillFrames": 104,
+  "ballSpeedSum": 15718.71904868197,
+  "humanDist": 16528.08755826968,
+  "rivalFieldDrift": 3684951.03488514,
+  "rivalFieldSamples": 33414,
+  "localMateDrift": 2983507.158532186,
+  "localMateSamples": 22276,
+  "goals": {
+   "local": 0,
+   "rival": 2
+  },
+  "kicks": {
+   "local": 17,
+   "rival": 43
+  },
+  "shots": 49,
+  "rivalGoalsFromLocalKick": 0,
+  "rivalGoalsOther": 2,
+  "rivalGoalsCarried": 0,
+  "seconds": 185.6
+ },
+ {
+  "seed": 1003,
+  "frames": 10800,
+  "possession": {
+   "local": 4262,
+   "rival": 2408,
+   "none": 4130
+  },
+  "thirds": {
+   "rivalThird": 1220,
+   "mid": 7613,
+   "ownThird": 1967
+  },
+  "ballStillFrames": 38,
+  "ballSpeedSum": 12914.065136824427,
+  "humanDist": 16804.496409884287,
+  "rivalFieldDrift": 3339508.682090105,
+  "rivalFieldSamples": 32400,
+  "localMateDrift": 3010137.079569199,
+  "localMateSamples": 21600,
+  "goals": {
+   "local": 0,
+   "rival": 0
+  },
+  "kicks": {
+   "local": 14,
+   "rival": 58
+  },
+  "shots": 32,
+  "rivalGoalsFromLocalKick": 0,
+  "rivalGoalsOther": 0,
+  "rivalGoalsCarried": 0,
+  "seconds": 180
+ },
+ {
+  "seed": 1004,
+  "frames": 10969,
+  "possession": {
+   "local": 4949,
+   "rival": 2570,
+   "none": 3450
+  },
+  "thirds": {
+   "rivalThird": 803,
+   "mid": 7789,
+   "ownThird": 2377
+  },
+  "ballStillFrames": 86,
+  "ballSpeedSum": 12411.969737869254,
+  "humanDist": 16898.078296399748,
+  "rivalFieldDrift": 3882839.471134958,
+  "rivalFieldSamples": 32907,
+  "localMateDrift": 2970315.700098537,
+  "localMateSamples": 21938,
+  "goals": {
+   "local": 0,
+   "rival": 1
+  },
+  "kicks": {
+   "local": 18,
+   "rival": 47
+  },
+  "shots": 19,
+  "rivalGoalsFromLocalKick": 0,
+  "rivalGoalsOther": 1,
+  "rivalGoalsCarried": 0,
+  "seconds": 182.8
+ },
+ {
+  "seed": 1005,
+  "frames": 10800,
+  "possession": {
+   "local": 5013,
+   "rival": 2043,
+   "none": 3744
+  },
+  "thirds": {
+   "rivalThird": 1202,
+   "mid": 7262,
+   "ownThird": 2336
+  },
+  "ballStillFrames": 38,
+  "ballSpeedSum": 13067.102229564507,
+  "humanDist": 17370.18901921519,
+  "rivalFieldDrift": 3567446.2971038306,
+  "rivalFieldSamples": 32400,
+  "localMateDrift": 3047274.7794250087,
+  "localMateSamples": 21600,
+  "goals": {
+   "local": 0,
+   "rival": 0
+  },
+  "kicks": {
+   "local": 23,
+   "rival": 51
+  },
+  "shots": 33,
+  "rivalGoalsFromLocalKick": 0,
+  "rivalGoalsOther": 0,
+  "rivalGoalsCarried": 0,
+  "seconds": 180
+ },
+ {
+  "seed": 1006,
+  "frames": 11138,
+  "possession": {
+   "local": 4340,
+   "rival": 2834,
+   "none": 3964
+  },
+  "thirds": {
+   "rivalThird": 934,
+   "mid": 7501,
+   "ownThird": 2703
+  },
+  "ballStillFrames": 126,
+  "ballSpeedSum": 13862.893198359694,
+  "humanDist": 18056.536332322245,
+  "rivalFieldDrift": 3761426.4037784566,
+  "rivalFieldSamples": 33414,
+  "localMateDrift": 3014279.4564301893,
+  "localMateSamples": 22276,
+  "goals": {
+   "local": 0,
+   "rival": 2
+  },
+  "kicks": {
+   "local": 15,
+   "rival": 54
+  },
+  "shots": 19,
+  "rivalGoalsFromLocalKick": 0,
+  "rivalGoalsOther": 2,
+  "rivalGoalsCarried": 0,
+  "seconds": 185.6
+ }
+]

@@ -1,0 +1,1441 @@
+/**
+ * Liga Chaquito F8 - Etapa 3 (controles corregidos + menú final)
+ * E = pase corto a compañero | R = centro / pase largo
+ * Fin de partido → REVANCHA o MENÚ PRINCIPAL
+ * HTML5 Canvas + JS puro
+ */
+
+// ============================================================
+// CONFIGURACIÓN
+// ============================================================
+const CONFIG = {
+    WIDTH: 480,
+    HEIGHT: 640,
+    TARGET_FPS: 60,
+    ASSETS_PATH: 'assets/',
+
+    FIELD: {
+        LEFT: 48,
+        RIGHT: 432,
+        TOP: 58,
+        BOTTOM: 582
+    },
+
+    GOAL_NORTH: { x: 185, y: 38,  w: 110, h: 30 },
+    GOAL_SOUTH: { x: 185, y: 572, w: 110, h: 30 },
+
+    BALL_FRICTION: 0.985,
+    BALL_BOUNCE: 0.82,
+    BALL_RADIUS: 9,
+    BALL_STOP_THRESHOLD: 0.12,
+
+    PLAYER_SPEED: 2.4,
+    PLAYER_SPRINT: 4.8,
+    AI_SPEED_MULTIPLIER: 1.12,
+    AI_ACCELERATION: 0.18,
+    PLAYER_RADIUS: 16,
+    POSSESSION_RANGE: 20,
+    KICK_POWER: 11.5,
+    PASS_POWER: 6.2,          // E - pase corto
+    LONG_PASS_POWER: 11.5,    // R - centro / pase largo
+    SLIDE_SPEED: 6.2,
+    SLIDE_DURATION: 0.38,
+    SLIDE_COOLDOWN: 0.55,
+
+    // Animación de sprites
+    SPRITE_SCALE: 1.12,
+    KICK_ANIM_SEC: 0.18,
+
+    MATCH_SECONDS: 180,
+    GOAL_CELEBRATION_SEC: 2.8
+};
+
+const EstadoPartido = {
+    EN_JUEGO: 'EN_JUEGO',
+    CELEBRANDO_GOL: 'CELEBRANDO_GOL',
+    FINALIZADO: 'FINALIZADO'
+};
+
+// ============================================================
+// VECTOR 2D
+// ============================================================
+class Vector2D {
+    constructor(x = 0, y = 0) { this.x = x; this.y = y; }
+    set(x, y) { this.x = x; this.y = y; return this; }
+    copy(v) { this.x = v.x; this.y = v.y; return this; }
+    clone() { return new Vector2D(this.x, this.y); }
+    add(v, mult = 1) { this.x += v.x * mult; this.y += v.y * mult; return this; }
+    scale(s) { this.x *= s; this.y *= s; return this; }
+    length() { return Math.hypot(this.x, this.y); }
+    normalize() {
+        const len = this.length();
+        if (len > 0.0001) { this.x /= len; this.y /= len; }
+        else { this.x = 0; this.y = 0; }
+        return this;
+    }
+    distanceTo(v) { return Math.hypot(this.x - v.x, this.y - v.y); }
+    directionTo(v) {
+        const dx = v.x - this.x, dy = v.y - this.y;
+        const len = Math.hypot(dx, dy);
+        if (len < 0.0001) return new Vector2D(0, 0);
+        return new Vector2D(dx / len, dy / len);
+    }
+}
+
+// ============================================================
+// PELOTA
+// ============================================================
+class Pelota {
+    constructor(x, y) {
+        this.pos = new Vector2D(x, y);
+        this.vel = new Vector2D(0, 0);
+        this.radius = CONFIG.BALL_RADIUS;
+        this.owner = null;
+        this.kickCooldown = 0;
+    }
+
+    update(dt) {
+        if (this.kickCooldown > 0) this.kickCooldown--;
+
+        if (this.owner) {
+            const offset = 18;
+            let fx = this.owner.facing.x, fy = this.owner.facing.y;
+            if (Math.abs(fx) + Math.abs(fy) < 0.1) {
+                fx = 0;
+                fy = this.owner.team === 'local' ? -1 : 1;
+            }
+            this.pos.x = this.owner.pos.x + fx * offset;
+            this.pos.y = this.owner.pos.y + fy * offset;
+            this.vel.set(0, 0);
+            return;
+        }
+
+        this.pos.x += this.vel.x;
+        this.pos.y += this.vel.y;
+        this.vel.x *= CONFIG.BALL_FRICTION;
+        this.vel.y *= CONFIG.BALL_FRICTION;
+        if (Math.abs(this.vel.x) < CONFIG.BALL_STOP_THRESHOLD) this.vel.x = 0;
+        if (Math.abs(this.vel.y) < CONFIG.BALL_STOP_THRESHOLD) this.vel.y = 0;
+        this._bounceWalls();
+    }
+
+    _bounceWalls() {
+        const f = CONFIG.FIELD;
+        const r = this.radius;
+        const gn = CONFIG.GOAL_NORTH;
+        const gs = CONFIG.GOAL_SOUTH;
+
+        if (this.pos.x - r < f.LEFT) {
+            this.pos.x = f.LEFT + r;
+            this.vel.x = -this.vel.x * CONFIG.BALL_BOUNCE;
+        }
+        if (this.pos.x + r > f.RIGHT) {
+            this.pos.x = f.RIGHT - r;
+            this.vel.x = -this.vel.x * CONFIG.BALL_BOUNCE;
+        }
+        if (this.pos.y - r < f.TOP) {
+            const inGoal = this.pos.x >= gn.x && this.pos.x <= gn.x + gn.w;
+            if (!inGoal) {
+                this.pos.y = f.TOP + r;
+                this.vel.y = -this.vel.y * CONFIG.BALL_BOUNCE;
+            }
+        }
+        if (this.pos.y + r > f.BOTTOM) {
+            const inGoal = this.pos.x >= gs.x && this.pos.x <= gs.x + gs.w;
+            if (!inGoal) {
+                this.pos.y = f.BOTTOM - r;
+                this.vel.y = -this.vel.y * CONFIG.BALL_BOUNCE;
+            }
+        }
+    }
+
+    kick(direction, power) {
+        this.owner = null;
+        this.kickCooldown = 18;
+        const dir = direction.clone().normalize();
+        if (dir.length() < 0.01) dir.set(0, -1);
+        this.vel.x = dir.x * power;
+        this.vel.y = dir.y * power;
+    }
+
+    reset(x, y) {
+        this.pos.set(x, y);
+        this.vel.set(0, 0);
+        this.owner = null;
+    }
+}
+
+// ============================================================
+// JUGADOR
+// ============================================================
+class Jugador {
+    constructor(x, y, opts = {}) {
+        this.pos = new Vector2D(x, y);
+        this.homePos = new Vector2D(x, y);
+        this.vel = new Vector2D(0, 0);
+        this.facing = new Vector2D(0, opts.team === 'rival' ? 1 : -1);
+        this.radius = CONFIG.PLAYER_RADIUS;
+        this.isHuman = !!opts.isHuman;
+        this.team = opts.team || 'local'; // 'local' | 'rival'
+        this.hasBall = false;
+        this.isSliding = false;
+        this.slideTimer = 0;
+        this.slideCooldown = 0;
+        this.animFrame = 0;
+        this.animTimer = 0;
+        this.keys = { up: false, down: false, left: false, right: false, shift: false };
+        this.frozen = false;
+        this.tint = opts.tint || null;
+        this.isGK = !!opts.isGK;
+        // Perfil individual ajustable desde tools/configurar_movilidad.py
+        this.mobilityId = opts.mobilityId || (this.isGK ? (this.team + '_gk') : this.team);
+        const mobility = (typeof MOVILIDAD_JUGADORES !== 'undefined' && MOVILIDAD_JUGADORES[this.mobilityId]) || {};
+        this.mobilityMultiplier = Number(mobility.velocidad) || (this.isGK ? 0.78 : (this.team === 'rival' ? 1.0 : 1.08));
+        this.sprintMultiplier = Number(mobility.sprint) || 1.0;
+
+        // Animación
+        this.moving = false;
+        this.sprinting = false;
+        this.animClock = Math.random() * 10;   // desfasa el "respirar" entre jugadores
+        this.animDir = this.team === 'rival' ? 'down' : 'up';  // 'up' | 'down' | 'side'
+        this.flipX = false;                    // mirar a la izquierda en vista lateral
+        this.kickTimer = 0;
+
+        // Ritmo, fase y deriva propios para evitar movimientos sincronizados.
+        const seedText = String(this.mobilityId);
+        let seed = 0;
+        for (let i = 0; i < seedText.length; i++) seed = (seed * 31 + seedText.charCodeAt(i)) >>> 0;
+        this.aiSeed = seed;
+        this.aiPhase = (seed % 997) / 997 * Math.PI * 2;
+        this.aiThinkTimer = (seed % 7) * 0.075;
+        this.aiDriftX = Math.sin(this.aiPhase) * 5;
+        this.aiDriftY = Math.cos(this.aiPhase * 1.37) * 4;
+        this.aiSpeedFactor = 0.72 + ((seed >>> 4) % 29) / 100;
+    }
+
+    update(dt, ball, allPlayers) {
+        if (this.frozen) { this.moving = false; this.sprinting = false; this.animFrame = 0; return; }
+
+        if (this.slideCooldown > 0) this.slideCooldown -= dt;
+
+        if (this.isHuman) {
+            if (this.isSliding) this._updateSlide(dt);
+            else this._updateMovement(dt);
+        } else {
+            // Compañeros / rivales simples: se mantienen cerca de su posición táctica
+            // y se acercan un poco a la pelota si está cerca
+            this._updateSimpleAI(dt, ball, allPlayers);
+        }
+
+        this._clampToField();
+
+        this._updateAnimation(dt);
+
+        this._handlePossession(ball);
+    }
+
+    // Decide qué animación mostrar: dirección visual (con histéresis para que no
+    // parpadee en diagonales), si corre y a qué ritmo mueve las piernas.
+    _updateAnimation(dt) {
+        const speed = this.vel.length();
+        this.moving = speed > 0.3 && !this.isSliding;
+        this.animClock += dt;
+        if (this.kickTimer > 0) this.kickTimer = Math.max(0, this.kickTimer - dt);
+
+        const ax = Math.abs(this.facing.x), ay = Math.abs(this.facing.y);
+        if (this.animDir === 'side') {
+            if (ay > ax * 1.35) this.animDir = this.facing.y < 0 ? 'up' : 'down';
+        } else if (ax > ay * 1.35) {
+            this.animDir = 'side';
+        } else if (ay > 0.01) {
+            this.animDir = this.facing.y < 0 ? 'up' : 'down';
+        }
+        if (this.animDir === 'side' && ax > 0.05) this.flipX = this.facing.x < 0;
+
+        if (this.moving) {
+            // más rápido el paso cuanto más rápido corre
+            const period = 0.30 / Math.max(speed, 0.8);
+            this.animTimer += dt;
+            while (this.animTimer >= period) {
+                this.animTimer -= period;
+                this.animFrame = (this.animFrame + 1) % 4;
+            }
+        } else {
+            this.animFrame = 0;
+            this.animTimer = 0;
+        }
+    }
+
+    _updateMovement(dt) {
+        let dx = 0, dy = 0;
+        if (this.keys.up)    dy -= 1;
+        if (this.keys.down)  dy += 1;
+        if (this.keys.left)  dx -= 1;
+        if (this.keys.right) dx += 1;
+
+        if (dx !== 0 || dy !== 0) {
+            const len = Math.hypot(dx, dy);
+            dx /= len; dy /= len;
+            const speed = (this.keys.shift ? CONFIG.PLAYER_SPRINT * this.sprintMultiplier : CONFIG.PLAYER_SPEED) * this.mobilityMultiplier;
+            this.sprinting = !!this.keys.shift;
+            this.vel.set(dx * speed, dy * speed);
+            this.facing.set(dx, dy);
+        } else {
+            this.vel.set(0, 0);
+            this.sprinting = false;
+        }
+        this.pos.x += this.vel.x;
+        this.pos.y += this.vel.y;
+    }
+
+    _updateSimpleAI(dt, ball, allPlayers) {
+        const owner = ball ? ball.owner : null;
+        const attackDir = this.team === 'local' ? -1 : 1;
+        const goalY = this.team === 'local' ? CONFIG.FIELD.BOTTOM - 24 : CONFIG.FIELD.TOP + 24;
+
+        // Si el arquero controla la pelota, despeja automáticamente.
+        if (this.isGK && owner === this) {
+            const dir = new Vector2D(Math.sin(this.aiPhase) * 0.16, attackDir).normalize();
+            this.facing.copy(dir);
+            ball.kick(dir, CONFIG.LONG_PASS_POWER * 0.92);
+            this.hasBall = false;
+            this.kickTimer = CONFIG.KICK_ANIM_SEC;
+            return;
+        }
+
+        let target = this.pos.clone();
+        if (this.isGK) {
+            const read = Math.max(-54, Math.min(54, (ball.pos.x - CONFIG.WIDTH / 2) * 0.34));
+            target.set(CONFIG.WIDTH / 2 + read + this.aiDriftX, goalY + this.aiDriftY * 0.35);
+        } else {
+            const fieldPlayers = allPlayers.filter(p => p.team === this.team && !p.isGK);
+            const nearest = fieldPlayers.reduce((best, p) =>
+                !best || p.pos.distanceTo(ball.pos) < best.pos.distanceTo(ball.pos) ? p : best, null);
+            if (!owner) {
+                if (nearest === this) {
+                    target.set(ball.pos.x + this.aiDriftX * 0.55, ball.pos.y + attackDir * 8 + this.aiDriftY * 0.45);
+                } else {
+                    target.set(this.homePos.x + this.aiDriftX + Math.sin(this.aiPhase + this.animClock * 0.55) * 2.5,
+                               this.homePos.y + this.aiDriftY + Math.cos(this.aiPhase + this.animClock * 0.43) * 2);
+                }
+            } else if (owner.team === this.team) {
+                if (owner === this) target.set(this.pos.x + this.aiDriftX * 0.18, this.pos.y + attackDir * 28);
+                else target.set(this.homePos.x + (owner.pos.x - this.homePos.x) * 0.12 + this.aiDriftX,
+                                this.homePos.y + (owner.pos.y - this.homePos.y) * 0.10 + this.aiDriftY);
+            } else if (nearest === this) {
+                target.set(owner.pos.x + this.aiDriftX * 0.45,
+                           owner.pos.y + (this.team === 'local' ? 22 : -22) + this.aiDriftY * 0.4);
+            } else {
+                target.set(this.homePos.x + (owner.pos.x - this.homePos.x) * 0.08 + this.aiDriftX,
+                           this.homePos.y + (owner.pos.y - this.homePos.y) * 0.07 + this.aiDriftY);
+            }
+        }
+
+        // Cada jugador decide en un intervalo distinto y tiene una velocidad propia.
+        this.aiThinkTimer -= dt;
+        if (this.aiThinkTimer <= 0) {
+            this.aiThinkTimer = 0.12 + ((this.aiSeed >>> 7) % 11) * 0.025;
+            this.aiPhase += 0.13 + ((this.aiSeed >>> 12) % 9) * 0.017;
+        }
+        const dir = this.pos.directionTo(target);
+        const dist = this.pos.distanceTo(target);
+        const speed = CONFIG.PLAYER_SPEED * 0.58 * this.mobilityMultiplier * this.aiSpeedFactor;
+        const fieldPlayers = allPlayers.filter(p => p.team === this.team && !p.isGK);
+        const nearest = fieldPlayers.reduce((best, p) =>
+            !best || p.pos.distanceTo(ball.pos) < best.pos.distanceTo(ball.pos) ? p : best, null);
+        const maxStep = this.isGK ? 0.75 : ((!owner && nearest === this && dist > 35) ? 1.25 : 0.48);
+        if (dist > 2.5) {
+            const factor = this.aiThinkTimer < 0.08 ? 0.72 : 1;
+            this.vel.x += (dir.x * speed * factor - this.vel.x) * 0.10;
+            this.vel.y += (dir.y * speed * factor - this.vel.y) * 0.10;
+            const v = this.vel.length();
+            if (v > maxStep) this.vel.scale(maxStep / v);
+            if (this.vel.length() > 0.08) this.facing.copy(this.vel.clone().normalize());
+            this.pos.x += this.vel.x;
+            this.pos.y += this.vel.y;
+        } else {
+            this.vel.scale(0.55);
+            if (this.vel.length() < 0.04) this.vel.set(0, 0);
+        }
+    }
+
+    _updateSlide(dt) {
+        this.slideTimer -= dt;
+        this.pos.x += this.facing.x * CONFIG.SLIDE_SPEED;
+        this.pos.y += this.facing.y * CONFIG.SLIDE_SPEED;
+        if (this.slideTimer <= 0) {
+            this.isSliding = false;
+            this.slideCooldown = CONFIG.SLIDE_COOLDOWN;
+            this.vel.set(0, 0);
+        }
+    }
+
+    _clampToField() {
+        const f = CONFIG.FIELD;
+        const r = this.radius;
+        this.pos.x = Math.max(f.LEFT + r, Math.min(f.RIGHT - r, this.pos.x));
+        this.pos.y = Math.max(f.TOP + r, Math.min(f.BOTTOM - r, this.pos.y));
+    }
+
+    _handlePossession(ball) {
+        if (ball.owner === this) {
+            this.hasBall = true;
+            return;
+        }
+        this.hasBall = false;
+        if (ball.kickCooldown > 0) return;
+        if (this.isSliding) return;
+
+        const dist = this.pos.distanceTo(ball.pos);
+        const ballSpeed = ball.vel.length();
+        if (dist < CONFIG.POSSESSION_RANGE && ballSpeed < 4.0) {
+            if (ball.owner) {
+                const ownerDist = ball.owner.pos.distanceTo(ball.pos);
+                if (dist >= ownerDist - 2) return;
+                ball.owner.hasBall = false;
+            }
+            ball.owner = this;
+            this.hasBall = true;
+        }
+    }
+
+    // ESPACIO: patear o barrer
+    actionSpace(ball) {
+        if (this.frozen || !this.isHuman) return;
+        if (this.hasBall && ball.owner === this) {
+            this.patear(ball);
+        } else if (!this.hasBall && !this.isSliding && this.slideCooldown <= 0) {
+            this.barrida();
+        }
+    }
+
+    // E: pase corto al compañero más cercano
+    actionPass(ball, teammates) {
+        if (this.frozen || !this.isHuman) return;
+        if (!this.hasBall || ball.owner !== this) return;
+
+        const target = this._findBestPassTarget(teammates);
+        if (target) {
+            const dir = this.pos.directionTo(target.pos);
+            ball.kick(dir, CONFIG.PASS_POWER);
+            this.hasBall = false;
+            this.kickTimer = CONFIG.KICK_ANIM_SEC;
+            this.facing.copy(dir);
+            console.log('[Pase] Corto a compañero');
+        } else {
+            // Sin compañero: pase corto en la dirección que mira
+            const dir = this.facing.clone();
+            if (dir.length() < 0.1) dir.set(0, -1);
+            ball.kick(dir, CONFIG.PASS_POWER * 0.85);
+            this.hasBall = false;
+            this.kickTimer = CONFIG.KICK_ANIM_SEC;
+            console.log('[Pase] Corto al frente');
+        }
+    }
+
+    // R: centro / pase largo
+    actionLongPass(ball) {
+        if (this.frozen || !this.isHuman) return;
+        if (!this.hasBall || ball.owner !== this) return;
+
+        const dir = this.facing.clone();
+        if (dir.length() < 0.1) dir.set(0, -1);
+        // Ligeramente más "elevado" en sensación: más potencia
+        ball.kick(dir, CONFIG.LONG_PASS_POWER);
+        this.hasBall = false;
+        this.kickTimer = CONFIG.KICK_ANIM_SEC;
+        console.log('[Pase] Centro / largo');
+    }
+
+    _findBestPassTarget(teammates) {
+        if (!teammates || teammates.length === 0) return null;
+        let best = null;
+        let bestScore = -Infinity;
+
+        for (const t of teammates) {
+            if (t === this) continue;
+            const dist = this.pos.distanceTo(t.pos);
+            if (dist < 25 || dist > 220) continue; // muy cerca o muy lejos
+
+            // Preferir compañeros que estén más adelante (hacia el arco rival = norte = y menor)
+            const forwardBonus = (this.pos.y - t.pos.y) * 0.4;
+            // Preferir alineados con la mirada
+            const toTarget = this.pos.directionTo(t.pos);
+            const align = this.facing.x * toTarget.x + this.facing.y * toTarget.y;
+            const score = forwardBonus + align * 40 - dist * 0.15;
+
+            if (score > bestScore) {
+                bestScore = score;
+                best = t;
+            }
+        }
+        return best;
+    }
+
+    patear(ball) {
+        if (!this.hasBall || ball.owner !== this) return;
+        const dir = this.facing.clone();
+        if (dir.length() < 0.1) dir.set(0, -1);
+        ball.kick(dir, CONFIG.KICK_POWER);
+        this.hasBall = false;
+        this.kickTimer = CONFIG.KICK_ANIM_SEC;
+    }
+
+    barrida() {
+        if (this.hasBall || this.isSliding || this.slideCooldown > 0) return;
+        this.isSliding = true;
+        this.slideTimer = CONFIG.SLIDE_DURATION;
+        this.vel.set(0, 0);
+    }
+
+    resetToHome() {
+        this.pos.copy(this.homePos);
+        this.vel.set(0, 0);
+        this.hasBall = false;
+        this.isSliding = false;
+        this.slideTimer = 0;
+        this.facing.set(0, this.team === 'rival' ? 1 : -1);
+        this.animDir = this.team === 'rival' ? 'down' : 'up';
+        this.kickTimer = 0;
+        this.moving = false;
+    }
+}
+
+// ============================================================
+// GESTOR DE PARTIDO
+// ============================================================
+class GestorPartido {
+    constructor(ball, players) {
+        this.ball = ball;
+        this.players = players;
+
+        this.estado = EstadoPartido.EN_JUEGO;
+        this.framesRestantes = CONFIG.MATCH_SECONDS * CONFIG.TARGET_FPS;
+        this.timerFestejo = 0;
+
+        this.golesLocal = 0;
+        this.golesRival = 0;
+
+        this.cartel = null;
+        this.cartelAlpha = 0;
+        this.cartelScale = 1;
+        this.goalScoredThisFrame = false;
+
+        // Menú de fin de partido
+        this.endMenuSelection = 0; // 0 = REVANCHA, 1 = MENÚ PRINCIPAL
+    }
+
+    update(dt) {
+        switch (this.estado) {
+            case EstadoPartido.EN_JUEGO:
+                this._updatePlaying(dt);
+                break;
+            case EstadoPartido.CELEBRANDO_GOL:
+                this._updateCelebration(dt);
+                break;
+            case EstadoPartido.FINALIZADO:
+                // animación suave del cartel
+                if (this.cartelAlpha < 1) this.cartelAlpha = Math.min(1, this.cartelAlpha + dt * 1.8);
+                if (this.cartelScale < 1.05) this.cartelScale = Math.min(1.05, this.cartelScale + dt * 1.2);
+                break;
+        }
+    }
+
+    _updatePlaying(dt) {
+        this.framesRestantes--;
+        if (this.framesRestantes <= 0) {
+            this.framesRestantes = 0;
+            this._finalizarPartido();
+            return;
+        }
+
+        for (const p of this.players) p.update(dt, this.ball, this.players);
+        this.ball.update(dt);
+        this._verificarGoles();
+    }
+
+    _verificarGoles() {
+        if (this.goalScoredThisFrame) return;
+        const b = this.ball;
+        const gn = CONFIG.GOAL_NORTH;
+        const gs = CONFIG.GOAL_SOUTH;
+
+        if (b.pos.y - b.radius < gn.y + gn.h &&
+            b.pos.x > gn.x && b.pos.x < gn.x + gn.w &&
+            b.pos.y < CONFIG.FIELD.TOP + 20) {
+            this.golesLocal++;
+            this._registrarGol();
+            return;
+        }
+
+        if (b.pos.y + b.radius > gs.y &&
+            b.pos.x > gs.x && b.pos.x < gs.x + gs.w &&
+            b.pos.y > CONFIG.FIELD.BOTTOM - 20) {
+            this.golesRival++;
+            this._registrarGol();
+        }
+    }
+
+    _registrarGol() {
+        this.goalScoredThisFrame = true;
+        this.estado = EstadoPartido.CELEBRANDO_GOL;
+        this.cartel = 'GOL';
+        this.cartelAlpha = 0;
+        this.cartelScale = 0.4;
+        this.timerFestejo = CONFIG.GOAL_CELEBRATION_SEC;
+
+        this.ball.owner = null;
+        for (const p of this.players) {
+            p.frozen = true;
+            p.hasBall = false;
+            p.isSliding = false;
+            p.vel.set(0, 0);
+        }
+    }
+
+    _updateCelebration(dt) {
+        this.timerFestejo -= dt;
+        if (this.cartelAlpha < 1) this.cartelAlpha = Math.min(1, this.cartelAlpha + dt * 3);
+        if (this.cartelScale < 1) this.cartelScale = Math.min(1, this.cartelScale + dt * 2.2);
+
+        if (this.timerFestejo <= 0) {
+            this._resetearCancha();
+            this.cartel = null;
+            this.estado = EstadoPartido.EN_JUEGO;
+            this.goalScoredThisFrame = false;
+            for (const p of this.players) p.frozen = false;
+        }
+    }
+
+    _resetearCancha() {
+        const cx = CONFIG.WIDTH / 2;
+        const cy = CONFIG.HEIGHT / 2;
+        this.ball.reset(cx, cy);
+        for (const p of this.players) p.resetToHome();
+    }
+
+    _finalizarPartido() {
+        this.estado = EstadoPartido.FINALIZADO;
+        this.ball.owner = null;
+        this.ball.vel.set(0, 0);
+        for (const p of this.players) {
+            p.frozen = true;
+            p.vel.set(0, 0);
+            p.isSliding = false;
+        }
+
+        if (this.golesLocal > this.golesRival) this.cartel = 'VICTORIA';
+        else if (this.golesRival > this.golesLocal) this.cartel = 'DERROTA';
+        else this.cartel = 'EMPATE';
+
+        this.cartelAlpha = 0;
+        this.cartelScale = 0.5;
+        this.endMenuSelection = 0;
+    }
+
+    getTiempoFormateado() {
+        const totalSec = Math.ceil(this.framesRestantes / CONFIG.TARGET_FPS);
+        const m = Math.floor(totalSec / 60);
+        const s = totalSec % 60;
+        return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+    }
+
+    isPlaying() {
+        return this.estado === EstadoPartido.EN_JUEGO;
+    }
+
+    getLocalTeammates(human) {
+        return this.players.filter(p => p.team === 'local' && p !== human);
+    }
+}
+
+// ============================================================
+// PRELOADER
+// ============================================================
+class Preloader {
+    constructor(assetList) {
+        this.assets = {};
+        this.assetList = assetList;
+        this.loaded = 0;
+        this.total = assetList.length;
+        this.onProgress = null;
+        this.onComplete = null;
+    }
+
+    load() {
+        if (this.total === 0) {
+            this.onComplete && this.onComplete(this.assets);
+            return;
+        }
+        this.assetList.forEach(item => this._loadAsset(item));
+    }
+
+    _loadAsset(item) {
+        const { key, src, type } = item;
+        if (type === 'image') {
+            const img = new Image();
+            img.onload = () => { this.assets[key] = img; this._assetLoaded(key); };
+            img.onerror = () => {
+                console.error(`[Preloader] Error: ${src}`);
+                this.assets[key] = this._placeholder(64, 64);
+                this._assetLoaded(key);
+            };
+            img.src = CONFIG.ASSETS_PATH + src;
+        } else {
+            this._assetLoaded(key);
+        }
+    }
+
+    _assetLoaded(key) {
+        this.loaded++;
+        const percent = Math.floor((this.loaded / this.total) * 100);
+        if (this.onProgress) this.onProgress(percent, key);
+        if (this.loaded >= this.total && this.onComplete) this.onComplete(this.assets);
+    }
+
+    _placeholder(w, h) {
+        const c = document.createElement('canvas');
+        c.width = w; c.height = h;
+        const ctx = c.getContext('2d');
+        ctx.fillStyle = '#ff00ff';
+        ctx.fillRect(0, 0, w, h);
+        return c;
+    }
+}
+
+// ============================================================
+// GAME
+// ============================================================
+class Game {
+    constructor(canvasId) {
+        this.canvas = document.getElementById(canvasId);
+        this.ctx = this.canvas.getContext('2d');
+        // Alta densidad: el lienzo interno se agranda según la pantalla (hasta 2x) y se
+        // dibuja con coordenadas lógicas de 480x640. Así no se ve borroso ni "cortado".
+        this.dpr = Math.min(window.devicePixelRatio || 1, 2);
+        this.canvas.width = Math.round(CONFIG.WIDTH * this.dpr);
+        this.canvas.height = Math.round(CONFIG.HEIGHT * this.dpr);
+        this.canvas.style.width = CONFIG.WIDTH + 'px';
+        this.canvas.style.height = CONFIG.HEIGHT + 'px';
+        this.ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+
+        this.assets = {};
+        this.isRunning = false;
+        this.lastTime = 0;
+        this.accumulator = 0;
+        this.frameTime = 1000 / CONFIG.TARGET_FPS;
+
+        this.player = null;
+        this.ball = null;
+        this.gestor = null;
+        this.players = [];
+
+        // Menú final: botones
+        this.endButtons = {
+            revancha: { x: 0, y: 0, w: 200, h: 48 },
+            menu:     { x: 0, y: 0, w: 200, h: 48 }
+        };
+
+        this.loadingBar = document.getElementById('loading-bar');
+        this.loadingText = document.getElementById('loading-text');
+        this.loadingScreen = document.getElementById('loading-screen');
+
+        this._bindInput();
+    }
+
+    getAssetManifest() {
+        return [
+            { key: 'cancha',     src: 'opt/cancha.webp', type: 'image' },
+            { key: 'ui_goles',   src: 'opt/ui_goles.webp', type: 'image' },
+            { key: 'ui_rangos',  src: 'opt/ui_rangos.webp', type: 'image' },
+            { key: 'pantalla',   src: 'opt/pantalla.webp', type: 'image' },
+            { key: 'logo',       src: 'CHAQUITO FUTBOL.jpg', type: 'image' },
+            { key: 'retoneta',   src: 'opt/retoneta.webp', type: 'image' },
+            // Atlas generado por tools/build_sprites.py (animaciones + 4 equipaciones)
+            { key: 'atlas', src: 'sprites/atlas.png', type: 'image' },
+            // Sprites individuales (respaldo si falta el atlas)
+            { key: 'blue_front', src: 'sprites/blue_front.png', type: 'image' },
+            { key: 'blue_front2', src: 'sprites/blue_front2.png', type: 'image' },
+            { key: 'blue_back',  src: 'sprites/blue_back.png', type: 'image' },
+            { key: 'blue_gk',    src: 'sprites/blue_gk.png', type: 'image' },
+            { key: 'red_front',  src: 'sprites/red_front.png', type: 'image' },
+            { key: 'red_front2', src: 'sprites/red_front2.png', type: 'image' },
+            { key: 'red_side',   src: 'sprites/red_side.png', type: 'image' }
+        ];
+    }
+
+    start() {
+        console.log('%c[Liga Chaquito F8] Controles: E pase · R centro · ESPACIO patear/barrer', 'color: #ffcc00; font-weight: bold;');
+
+        const preloader = new Preloader(this.getAssetManifest());
+        preloader.onProgress = (percent, key) => {
+            if (this.loadingBar) this.loadingBar.style.width = percent + '%';
+            if (this.loadingText) this.loadingText.textContent = `Cargando: ${key} (${percent}%)`;
+        };
+        preloader.onComplete = (assets) => {
+            this.assets = assets;
+            this._initMatch();
+            setTimeout(() => {
+                if (this.loadingScreen) this.loadingScreen.classList.add('hidden');
+                this.isRunning = true;
+                this.lastTime = performance.now();
+                requestAnimationFrame(t => this.loop(t));
+            }, 350);
+        };
+        preloader.load();
+    }
+
+    _initMatch() {
+        const cx = CONFIG.WIDTH / 2;
+        const cy = CONFIG.HEIGHT / 2;
+
+        // AZUL = equipo controlable (local), abajo. ROJO = rival, arriba.
+        // Arquero local cerca del arco sur
+        this.player = new Jugador(cx, 460, { isHuman: true, team: 'local', mobilityId: 'local_0' });
+
+        const localMates = [
+            new Jugador(cx - 70, 500, { team: 'local', mobilityId: 'local_1' }),
+            new Jugador(cx + 70, 500, { team: 'local', mobilityId: 'local_2' }),
+            new Jugador(cx, 400, { team: 'local', mobilityId: 'local_3' }),
+            new Jugador(cx, 545, { team: 'local', isGK: true, mobilityId: 'local_gk' }) // arquero
+        ];
+
+        const rivals = [
+            new Jugador(cx, 160, { team: 'rival', mobilityId: 'rival_0' }),
+            new Jugador(cx - 80, 200, { team: 'rival', mobilityId: 'rival_1' }),
+            new Jugador(cx + 80, 200, { team: 'rival', mobilityId: 'rival_2' }),
+            new Jugador(cx, 280, { team: 'rival', mobilityId: 'rival_3' }),
+            new Jugador(cx, 95,  { team: 'rival', isGK: true, mobilityId: 'rival_gk' }) // arquero rival
+        ];
+
+        this.players = [this.player, ...localMates, ...rivals];
+        this.ball = new Pelota(cx, cy);
+        this.gestor = new GestorPartido(this.ball, this.players);
+        this.controllableIndex = 0;
+    }
+
+
+    _syncActivePlayerToBall() {
+        const owner = this.ball && this.ball.owner;
+        if (!owner || owner.team !== 'local' || owner.isGK || owner === this.player) return;
+        const locals = this.players.filter(p => p.team === 'local' && !p.isGK);
+        const index = locals.indexOf(owner);
+        if (index < 0) return;
+        if (this.player) {
+            this.player.isHuman = false;
+            this.player.keys = { up: false, down: false, left: false, right: false, shift: false };
+        }
+        this.controllableIndex = index;
+        this.player = owner;
+        this.player.isHuman = true;
+        this.player.keys = { up: false, down: false, left: false, right: false, shift: false };
+    }
+
+    _switchPlayer() {
+        // Solo jugadores de campo del equipo local (no el arquero, más cómodo)
+        const locals = this.players.filter(p => p.team === 'local' && !p.isGK);
+        if (locals.length < 2) return;
+
+        this.player.isHuman = false;
+        this.player.keys = { up: false, down: false, left: false, right: false, shift: false };
+
+        this.controllableIndex = ((this.controllableIndex || 0) + 1) % locals.length;
+        this.player = locals[this.controllableIndex];
+        this.player.isHuman = true;
+        this.player.keys = { up: false, down: false, left: false, right: false, shift: false };
+    }
+
+    _bindInput() {
+        window.addEventListener('keydown', (e) => {
+            if (!this.player || !this.gestor) return;
+            const k = this.player.keys;
+            const g = this.gestor;
+
+            // Menú de fin de partido
+            if (g.estado === EstadoPartido.FINALIZADO) {
+                if (e.code === 'ArrowUp' || e.code === 'KeyW') {
+                    g.endMenuSelection = 0;
+                    e.preventDefault();
+                    return;
+                }
+                if (e.code === 'ArrowDown' || e.code === 'KeyS') {
+                    g.endMenuSelection = 1;
+                    e.preventDefault();
+                    return;
+                }
+                if (e.code === 'Enter' || e.code === 'Space') {
+                    e.preventDefault();
+                    this._handleEndMenuConfirm();
+                    return;
+                }
+                return; // bloquea el resto de controles
+            }
+
+            switch (e.code) {
+                case 'KeyW': case 'ArrowUp':    k.up = true; break;
+                case 'KeyS': case 'ArrowDown':  k.down = true; break;
+                case 'KeyA': case 'ArrowLeft':  k.left = true; break;
+                case 'KeyD': case 'ArrowRight': k.right = true; break;
+                case 'ShiftLeft': case 'ShiftRight': k.shift = true; break;
+
+                case 'Space':
+                    e.preventDefault();
+                    if (g.isPlaying()) this.player.actionSpace(this.ball);
+                    break;
+
+                case 'KeyQ':
+                    e.preventDefault();
+                    if (g.isPlaying()) this._switchPlayer();
+                    break;
+
+                case 'KeyE':
+                    e.preventDefault();
+                    if (g.isPlaying()) {
+                        const mates = g.getLocalTeammates(this.player);
+                        this.player.actionPass(this.ball, mates);
+                    }
+                    break;
+
+                case 'KeyR':
+                    e.preventDefault();
+                    if (g.isPlaying()) {
+                        this.player.actionLongPass(this.ball);
+                    }
+                    break;
+            }
+        });
+
+        window.addEventListener('keyup', (e) => {
+            if (!this.player) return;
+            const k = this.player.keys;
+            switch (e.code) {
+                case 'KeyW': case 'ArrowUp':    k.up = false; break;
+                case 'KeyS': case 'ArrowDown':  k.down = false; break;
+                case 'KeyA': case 'ArrowLeft':  k.left = false; break;
+                case 'KeyD': case 'ArrowRight': k.right = false; break;
+                case 'ShiftLeft': case 'ShiftRight': k.shift = false; break;
+            }
+        });
+
+        // Clic en botones del menú final
+        this.canvas.addEventListener('click', (e) => {
+            if (!this.gestor || this.gestor.estado !== EstadoPartido.FINALIZADO) return;
+            const rect = this.canvas.getBoundingClientRect();
+            const scaleX = CONFIG.WIDTH / rect.width;
+            const scaleY = CONFIG.HEIGHT / rect.height;
+            const mx = (e.clientX - rect.left) * scaleX;
+            const my = (e.clientY - rect.top) * scaleY;
+
+            const b = this.endButtons;
+            if (this._hit(mx, my, b.revancha)) {
+                this.gestor.endMenuSelection = 0;
+                this._handleEndMenuConfirm();
+            } else if (this._hit(mx, my, b.menu)) {
+                this.gestor.endMenuSelection = 1;
+                this._handleEndMenuConfirm();
+            }
+        });
+    }
+
+    _hit(mx, my, btn) {
+        return mx >= btn.x && mx <= btn.x + btn.w && my >= btn.y && my <= btn.y + btn.h;
+    }
+
+    _handleEndMenuConfirm() {
+        const sel = this.gestor.endMenuSelection;
+        if (sel === 0) {
+            // REVANCHA → nuevo partido
+            this._initMatch();
+        } else {
+            // MENÚ PRINCIPAL → por ahora también reinicia (menú completo en etapas futuras)
+            // Dejamos un mensaje en consola y reiniciamos limpio
+            console.log('[Menú] Volviendo al menú principal (placeholder → reinicio)');
+            this._initMatch();
+        }
+    }
+
+    // --------------------------------------------------------
+    // LOOP
+    // --------------------------------------------------------
+    loop(timestamp) {
+        if (!this.isRunning) return;
+        const delta = timestamp - this.lastTime;
+        this.lastTime = timestamp;
+        this.accumulator += delta;
+        while (this.accumulator >= this.frameTime) {
+            this.update(this.frameTime / 1000);
+            this.accumulator -= this.frameTime;
+        }
+        this.render();
+        requestAnimationFrame(t => this.loop(t));
+    }
+
+    update(dt) {
+        if (!this.gestor) return;
+        this.gestor.update(dt);
+        this._syncActivePlayerToBall();
+    }
+
+    // --------------------------------------------------------
+    // RENDER
+    // --------------------------------------------------------
+    render() {
+        const ctx = this.ctx;
+        const W = CONFIG.WIDTH;
+        const H = CONFIG.HEIGHT;
+
+        ctx.clearRect(0, 0, W, H);
+
+        const cancha = this.assets.cancha;
+        if (cancha) ctx.drawImage(cancha, 0, 0, W, H);
+        else {
+            ctx.fillStyle = '#1a5c2a';
+            ctx.fillRect(0, 0, W, H);
+        }
+
+        // Jugadores (rivales primero, luego locales, humano encima)
+        const sorted = [...this.players].sort((a, b) => {
+            if (a.isHuman) return 1;
+            if (b.isHuman) return -1;
+            return a.pos.y - b.pos.y;
+        });
+        for (const p of sorted) this._drawPlayer(ctx, p);
+
+        this._drawBall(ctx);
+        this._drawMatchUI(ctx);
+        this._drawCartel(ctx);
+
+        if (this.gestor && this.gestor.estado === EstadoPartido.FINALIZADO) {
+            this._drawEndMenu(ctx);
+        }
+    }
+
+    _drawBall(ctx) {
+        const b = this.ball;
+        if (!b) return;
+        ctx.fillStyle = 'rgba(0,0,0,0.35)';
+        ctx.beginPath();
+        ctx.ellipse(b.pos.x, b.pos.y + 4, b.radius * 0.9, b.radius * 0.4, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(b.pos.x, b.pos.y, b.radius, 0, Math.PI * 2);
+        ctx.fillStyle = '#f5f5f5';
+        ctx.fill();
+        ctx.strokeStyle = '#222';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+
+        // Spray de paneles y acentos de color, recortado al contorno de la pelota.
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(b.pos.x, b.pos.y, b.radius - 0.8, 0, Math.PI * 2);
+        ctx.clip();
+        ctx.translate(b.pos.x, b.pos.y);
+        ctx.rotate(Math.atan2(b.vel.y, b.vel.x));
+        ctx.fillStyle = '#252b32';
+        ctx.beginPath();
+        ctx.moveTo(-2, -8); ctx.lineTo(3, -5); ctx.lineTo(2, -1);
+        ctx.lineTo(-3, 1); ctx.lineTo(-6, -3); ctx.closePath(); ctx.fill();
+        ctx.beginPath();
+        ctx.moveTo(5, 1); ctx.lineTo(8, 4); ctx.lineTo(4, 8);
+        ctx.lineTo(0, 5); ctx.lineTo(1, 2); ctx.closePath(); ctx.fill();
+        ctx.fillStyle = '#38a9e8';
+        ctx.beginPath(); ctx.arc(-5, 5, 1.7, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath();
+        ctx.moveTo(3, -7); ctx.lineTo(7, -5); ctx.lineTo(5, -2); ctx.closePath(); ctx.fill();
+        ctx.restore();
+    }
+
+    _drawPlayer(ctx, p) {
+        if (!p) return;
+        const A = (typeof SPRITE_ATLAS !== 'undefined') ? SPRITE_ATLAS : null;
+        const atlas = this.assets.atlas;
+        if (!A || !atlas || !atlas.width) return this._drawPlayerLegacy(ctx, p);
+
+        const kitName = p.isGK ? (p.team === 'local' ? 'gk_local' : 'gk_rival') : p.team;
+        const kit = A.kits[kitName];
+        const frames = A.groups[kit.group].frames;
+        const anims = A.anims[kit.group];
+        const isSide = p.animDir === 'side';
+
+        // --- qué cuadro mostrar ---
+        let frameName;
+        if (p.isSliding && anims.slide) {
+            const prog = 1 - Math.max(0, p.slideTimer) / CONFIG.SLIDE_DURATION;
+            frameName = anims.slide[Math.min(anims.slide.length - 1, Math.floor(prog * anims.slide.length))];
+        } else if (p.kickTimer > 0 && isSide && anims.kick_side) {
+            frameName = anims.kick_side[0];
+        } else {
+            const list = anims[`${p.animDir}_${p.moving ? 'run' : 'idle'}`] || anims.down_idle;
+            frameName = list[p.moving ? p.animFrame % list.length : 0];
+        }
+        const f = frames[frameName] || frames[anims.down_idle[0]];
+
+        const S = A.scale || CONFIG.SPRITE_SCALE;
+        const t = p.animClock;
+        const footY = p.pos.y + 4;
+
+        // Rebote al correr / respiración parado
+        let bob = p.moving
+            ? -Math.abs(Math.sin(t * (p.sprinting ? 22 : 15))) * 2.4
+            : Math.sin(t * 2.2) * 0.6;
+        const dirSign = p.facing.x >= 0 ? 1 : -1;
+        let angle = p.moving ? (p.sprinting ? 0.09 : 0.03) * dirSign * (isSide ? 1 : 0.6) : 0;
+        let flip = isSide && p.flipX;
+        let sx = 1, sy = 1, dy = 0;
+
+        // Patada de frente/espalda: estirón corto (de costado ya usa su cuadro propio)
+        if (p.kickTimer > 0 && !isSide) {
+            const k = p.kickTimer / CONFIG.KICK_ANIM_SEC;
+            sx = 1 + 0.12 * k;
+            sy = 1 - 0.08 * k;
+        }
+        // Barrida: el cuadro mira a la derecha; se gira hacia donde se tira
+        if (p.isSliding && anims.slide) {
+            flip = p.facing.x < 0;
+            angle = Math.atan2(p.facing.y, Math.abs(p.facing.x));
+            bob = 0;
+        }
+
+        if (p.isHuman) this._drawPlayerIndicator(ctx, p);
+
+        // Sombra (se achica un poco cuando "salta" por el rebote)
+        ctx.fillStyle = 'rgba(0,0,0,0.28)';
+        ctx.beginPath();
+        ctx.ellipse(p.pos.x, p.pos.y + 4, (p.isSliding ? 17 : 12) + bob * 0.5, 4.5, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Polvo al sprintar
+        if (p.moving && p.sprinting) {
+            const len = Math.hypot(p.vel.x, p.vel.y) || 1;
+            const bx = -p.vel.x / len, by = -p.vel.y / len;
+            ctx.fillStyle = 'rgba(230,230,210,0.22)';
+            ctx.beginPath(); ctx.arc(p.pos.x + bx * 9, p.pos.y + 3 + by * 6, 3.2, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = 'rgba(230,230,210,0.12)';
+            ctx.beginPath(); ctx.arc(p.pos.x + bx * 17, p.pos.y + 3 + by * 11, 2.2, 0, Math.PI * 2); ctx.fill();
+        }
+
+        ctx.save();
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+        ctx.translate(p.pos.x, footY + bob + dy);
+        ctx.rotate(angle);
+        ctx.scale(flip ? -sx : sx, sy);
+        ctx.drawImage(atlas, f.x, f.y + kit.y, f.w, f.h,
+            -f.px * S, -f.py * S, f.w * S, f.h * S);
+        ctx.restore();
+
+        if (p.isGK) {
+            ctx.fillStyle = 'rgba(0,0,0,0.55)';
+            ctx.fillRect(p.pos.x - 10, p.pos.y + 8, 20, 10);
+            ctx.fillStyle = '#ffcc00';
+            ctx.font = 'bold 8px Courier New';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('GK', p.pos.x, p.pos.y + 13);
+        }
+
+    }
+
+    // Dibujo anterior (imágenes fijas). Se usa solo si falta el atlas.
+    _drawPlayerLegacy(ctx, p) {
+
+        // Elegir sprite estático limpio según equipo / rol / dirección
+        let img = null;
+        if (p.team === 'local') {
+            if (p.isGK) {
+                img = this.assets.blue_gk || this.assets.blue_front;
+            } else {
+                // Según dirección aproximada
+                const ax = Math.abs(p.facing.x), ay = Math.abs(p.facing.y);
+                if (ay >= ax) {
+                    img = (p.facing.y < 0) ? (this.assets.blue_back || this.assets.blue_front)
+                                           : (this.assets.blue_front || this.assets.blue_front2);
+                } else {
+                    img = this.assets.blue_front2 || this.assets.blue_front;
+                }
+            }
+        } else {
+            if (p.isGK) {
+                img = this.assets.red_front2 || this.assets.red_front;
+            } else {
+                img = this.assets.red_front || this.assets.red_front2 || this.assets.red_side;
+            }
+        }
+
+        const drawH = p.isGK ? 66 : 62;
+        const drawW = img ? (img.width / img.height) * drawH : 40;
+        const drawX = p.pos.x - drawW / 2;
+        const drawY = p.pos.y - drawH + 6;
+
+        if (p.isHuman) this._drawPlayerIndicator(ctx, p);
+
+        // Sombra
+        ctx.fillStyle = 'rgba(0,0,0,0.28)';
+        ctx.beginPath();
+        ctx.ellipse(p.pos.x, p.pos.y + 3, drawW * 0.28, 4.5, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        if (img && img.width) {
+            ctx.drawImage(img, drawX, drawY, drawW, drawH);
+        } else {
+            // fallback círculo
+            ctx.beginPath();
+            ctx.arc(p.pos.x, p.pos.y - 14, 13, 0, Math.PI * 2);
+            ctx.fillStyle = p.team === 'local' ? '#1a6aff' : '#e63939';
+            ctx.fill();
+            ctx.strokeStyle = '#000';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+        }
+
+        // Etiqueta GK
+        if (p.isGK) {
+            ctx.fillStyle = 'rgba(0,0,0,0.55)';
+            ctx.fillRect(p.pos.x - 10, p.pos.y + 6, 20, 10);
+            ctx.fillStyle = '#ffcc00';
+            ctx.font = 'bold 8px Courier New';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('GK', p.pos.x, p.pos.y + 11);
+        }
+
+        if (p.isSliding) {
+            ctx.strokeStyle = 'rgba(255, 220, 80, 0.4)';
+            ctx.lineWidth = 2.5;
+            ctx.beginPath();
+            ctx.moveTo(p.pos.x - p.facing.x * 14, p.pos.y - p.facing.y * 14);
+            ctx.lineTo(p.pos.x, p.pos.y);
+            ctx.stroke();
+        }
+    }
+
+    _drawPlayerIndicator(ctx, p) {
+        const x = p.pos.x;
+        const y = p.pos.y + 10;
+        ctx.fillStyle = p.hasBall ? 'rgba(50, 220, 80, 0.55)' : 'rgba(255, 210, 40, 0.55)';
+        ctx.beginPath();
+        ctx.ellipse(x, y + 2, 13, 5, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = p.hasBall ? '#2ecc40' : '#ffcc00';
+        ctx.beginPath();
+        ctx.moveTo(x, y - 5);
+        ctx.lineTo(x - 6, y + 4);
+        ctx.lineTo(x + 6, y + 4);
+        ctx.closePath();
+        ctx.fill();
+        ctx.strokeStyle = '#111';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+    }
+
+    _drawMatchUI(ctx) {
+        if (!this.gestor) return;
+        const W = CONFIG.WIDTH;
+        const g = this.gestor;
+
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.72)';
+        ctx.fillRect(0, 0, W, 42);
+        ctx.fillStyle = '#ffcc00';
+        ctx.fillRect(0, 40, W, 2);
+
+        this._drawScoreBox(ctx, 12, 6, g.golesLocal, '#3a9bff', 'LOCAL');
+
+        const timeStr = g.getTiempoFormateado();
+        ctx.fillStyle = 'rgba(0,0,0,0.5)';
+        ctx.fillRect(W / 2 - 38, 7, 76, 26);
+        ctx.strokeStyle = '#ffcc00';
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(W / 2 - 38, 7, 76, 26);
+        ctx.fillStyle = g.framesRestantes < 30 * CONFIG.TARGET_FPS ? '#ff4444' : '#ffffff';
+        ctx.font = 'bold 16px Courier New';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(timeStr, W / 2, 20);
+
+        this._drawScoreBox(ctx, W - 78, 6, g.golesRival, '#ff5555', 'RIVAL');
+
+        if (g.estado === EstadoPartido.EN_JUEGO) {
+            ctx.fillStyle = 'rgba(0,0,0,0.5)';
+            ctx.fillRect(0, CONFIG.HEIGHT - 22, W, 22);
+            ctx.fillStyle = '#ccc';
+            ctx.font = '9px Courier New';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('WASD · SHIFT · ESPACIO patear/barrer · E pase · R centro', W / 2, CONFIG.HEIGHT - 11);
+        }
+    }
+
+    _drawScoreBox(ctx, x, y, score, color, label) {
+        ctx.fillStyle = 'rgba(0,0,0,0.55)';
+        ctx.fillRect(x, y, 66, 28);
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(x, y, 66, 28);
+        ctx.fillStyle = color;
+        ctx.font = 'bold 8px Courier New';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'top';
+        ctx.fillText(label, x + 5, y + 3);
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 16px Courier New';
+        ctx.textAlign = 'right';
+        ctx.fillText(String(score), x + 60, y + 12);
+    }
+
+    _drawCartel(ctx) {
+        const g = this.gestor;
+        if (!g || !g.cartel) return;
+        // En FINALIZADO el menú se dibuja aparte; el cartel de resultado va más arriba
+        if (g.estado === EstadoPartido.FINALIZADO) return;
+
+        const W = CONFIG.WIDTH;
+        const H = CONFIG.HEIGHT;
+        const alpha = g.cartelAlpha;
+        const scale = g.cartelScale;
+
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = `rgba(0,0,0,${0.35 * alpha})`;
+        ctx.fillRect(0, 0, W, H);
+
+        const cx = W / 2;
+        const cy = H / 2 - 10;
+        const sheet = this.assets.ui_goles;
+        let drawn = false;
+
+        if (sheet) {
+            const regions = {
+                'GOL':      { sx: 35,   sy: 70,  sw: 1190, sh: 445 },
+                'VICTORIA': { sx: 1260, sy: 125, sw: 1100, sh: 350 },
+                'DERROTA':  { sx: 95,   sy: 575, sw: 1050, sh: 330 },
+                'EMPATE':   { sx: 1360, sy: 575, sw: 900,  sh: 320 }
+            };
+            const reg = regions[g.cartel];
+            if (reg) {
+                const maxW = 390 * scale;
+                const maxH = 180 * scale;
+                const ratio = reg.sw / reg.sh;
+                const dw = Math.min(maxW, maxH * ratio);
+                const dh = dw / ratio;
+                ctx.drawImage(sheet, reg.sx, reg.sy, reg.sw, reg.sh, cx - dw / 2, cy - dh / 2, dw, dh);
+                drawn = true;
+            }
+        }
+
+        if (!drawn) {
+            const colors = { 'GOL': '#ffcc00', 'VICTORIA': '#2ecc40', 'DERROTA': '#ff4444', 'EMPATE': '#aaaaaa' };
+            const label = g.cartel === 'GOL' ? '¡GOL!' : g.cartel;
+            ctx.font = `bold ${Math.floor(48 * scale)}px Courier New`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillStyle = 'rgba(0,0,0,0.7)';
+            ctx.fillText(label, cx + 3, cy + 3);
+            ctx.fillStyle = colors[g.cartel] || '#ffcc00';
+            ctx.fillText(label, cx, cy);
+            ctx.strokeStyle = '#111';
+            ctx.lineWidth = 2;
+            ctx.strokeText(label, cx, cy);
+        }
+
+        if (g.estado === EstadoPartido.CELEBRANDO_GOL) {
+            ctx.font = 'bold 18px Courier New';
+            ctx.fillStyle = '#ffffff';
+            ctx.textAlign = 'center';
+            ctx.fillText(`${g.golesLocal}  -  ${g.golesRival}`, cx, cy + 90 * scale);
+        }
+        ctx.restore();
+    }
+
+    /**
+     * Menú final grande: REVANCHA / MENÚ PRINCIPAL
+     */
+    _drawEndMenu(ctx) {
+        const g = this.gestor;
+        const W = CONFIG.WIDTH;
+        const H = CONFIG.HEIGHT;
+        const alpha = g.cartelAlpha;
+
+        ctx.save();
+        ctx.globalAlpha = alpha;
+
+        // Fondo oscuro
+        ctx.fillStyle = 'rgba(0,0,0,0.75)';
+        ctx.fillRect(0, 0, W, H);
+
+        // Resultado
+        const resultColors = { VICTORIA: '#2ecc40', DERROTA: '#ff4444', EMPATE: '#ffcc00' };
+        const resultLabel = g.cartel || 'FIN';
+        ctx.font = 'bold 42px Courier New';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = 'rgba(0,0,0,0.6)';
+        ctx.fillText(resultLabel, W / 2 + 3, 150 + 3);
+        ctx.fillStyle = resultColors[resultLabel] || '#ffcc00';
+        ctx.fillText(resultLabel, W / 2, 150);
+        ctx.strokeStyle = '#111';
+        ctx.lineWidth = 2;
+        ctx.strokeText(resultLabel, W / 2, 150);
+
+        // Marcador
+        ctx.font = 'bold 28px Courier New';
+        ctx.fillStyle = '#ffffff';
+        ctx.fillText(`${g.golesLocal}  -  ${g.golesRival}`, W / 2, 210);
+
+        // Botones grandes
+        const btnW = 240;
+        const btnH = 52;
+        const btnX = (W - btnW) / 2;
+        const btn1Y = 300;
+        const btn2Y = 370;
+
+        this.endButtons.revancha = { x: btnX, y: btn1Y, w: btnW, h: btnH };
+        this.endButtons.menu     = { x: btnX, y: btn2Y, w: btnW, h: btnH };
+
+        this._drawEndButton(ctx, this.endButtons.revancha, 'REVANCHA', g.endMenuSelection === 0);
+        this._drawEndButton(ctx, this.endButtons.menu, 'MENÚ PRINCIPAL', g.endMenuSelection === 1);
+
+        // Ayuda
+        ctx.font = '11px Courier New';
+        ctx.fillStyle = '#888';
+        ctx.fillText('↑↓ o W/S para elegir  ·  ENTER o CLIC para confirmar', W / 2, H - 40);
+
+        ctx.restore();
+    }
+
+    _drawEndButton(ctx, btn, label, selected) {
+        // Fondo
+        if (selected) {
+            ctx.fillStyle = '#ffcc00';
+            ctx.fillRect(btn.x - 3, btn.y - 3, btn.w + 6, btn.h + 6);
+            ctx.fillStyle = '#1a1a1a';
+        } else {
+            ctx.fillStyle = 'rgba(30,30,30,0.9)';
+        }
+        ctx.fillRect(btn.x, btn.y, btn.w, btn.h);
+
+        // Borde
+        ctx.strokeStyle = selected ? '#fff' : '#666';
+        ctx.lineWidth = selected ? 3 : 1.5;
+        ctx.strokeRect(btn.x, btn.y, btn.w, btn.h);
+
+        // Texto
+        ctx.font = 'bold 20px Courier New';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = selected ? '#ffcc00' : '#cccccc';
+        if (selected) {
+            // texto sobre fondo oscuro ya pintado
+            ctx.fillStyle = '#ffcc00';
+        }
+        ctx.fillText(label, btn.x + btn.w / 2, btn.y + btn.h / 2);
+    }
+}
+
+// ============================================================
+// BOOT
+// ============================================================
+window.addEventListener('DOMContentLoaded', () => {
+    const game = new Game('gameCanvas');
+    game.start();
+});
